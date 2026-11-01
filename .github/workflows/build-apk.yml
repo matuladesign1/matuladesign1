@@ -85,11 +85,20 @@ jobs:
           path: dist/
           retention-days: 30
 
-      - name: Publier la version (tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publier l'APK (téléchargement public)
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: Sermons de Branham Matomate ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            Application Android (7.0 et plus) — Matula Design & Pasteur Ben MATOMATE.
+            Installez **SermonsBranhamMatomate.apk** sur le téléphone.
+          files: |
+            dist/SermonsBranhamMatomate.apk
+            dist/SermonsBranhamMatomate.aab
 
   device-test:
     name: Test sur émulateur Android 7.0 et 13
