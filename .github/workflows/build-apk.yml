@@ -9,6 +9,8 @@ on:
 
 env:
   FLUTTER_VERSION: '3.27.4'
+  # PDF « Le Grenier du Message » sur Google Drive (partagé par lien)
+  SERMONS_DRIVE_ID: '1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg'
 
 permissions:
   contents: write
@@ -54,6 +56,22 @@ jobs:
           keyAlias=$KEY_ALIAS
           storeFile=upload-keystore.jks
           EOF
+
+      - name: Cache de la bibliothèque des prédications
+        id: sermons-cache
+        uses: actions/cache@v4
+        with:
+          path: assets/sermons
+          key: sermons-${{ env.SERMONS_DRIVE_ID }}-${{ hashFiles('tools/import_grenier.py', 'lib/data/db.dart') }}
+
+      - name: Construire la bibliothèque des prédications
+        if: steps.sermons-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils >/dev/null
+          pip install -q gdown pypdf
+          gdown --retries 3 "$SERMONS_DRIVE_ID" -O sermons.pdf
+          python3 tools/import_grenier.py sermons.pdf assets/sermons
+          rm -f sermons.pdf
 
       - name: Dépendances, icône et écran de démarrage
         run: |

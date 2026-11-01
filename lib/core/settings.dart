@@ -56,6 +56,10 @@ class Settings extends ChangeNotifier {
   String get bibleVersion => _p.getString('bibleVersion') ?? 'LSG';
   set bibleVersion(String v) => _set(() => _p.setString('bibleVersion', v));
 
+  /// Identifiant de la bibliothèque de sermons embarquée déjà installée.
+  String get sermonsBundle => _p.getString('sermonsBundle') ?? '';
+  set sermonsBundle(String v) => _p.setString('sermonsBundle', v);
+
   int get bibleAssetVersion => _p.getInt('bibleAssetVersion') ?? 0;
   set bibleAssetVersion(int v) => _p.setInt('bibleAssetVersion', v);
 

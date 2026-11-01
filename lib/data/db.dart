@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -111,7 +112,7 @@ class AppDb {
 
   String get pdfDir => p.join(dir.path, 'pdf');
 
-  static Future<AppDb> open(Settings settings) async {
+  static Future<AppDb> open(Settings settings, {void Function(double)? onProgress}) async {
     final dir = await getApplicationSupportDirectory();
     final biblePath = p.join(dir.path, 'bible.db');
     if (!File(biblePath).existsSync() || settings.bibleAssetVersion < bibleAssetVersion) {
@@ -122,6 +123,7 @@ class AppDb {
       settings.bibleAssetVersion = bibleAssetVersion;
     }
     Directory(p.join(dir.path, 'pdf')).createSync(recursive: true);
+    await _installSermonBundle(dir, settings, onProgress);
     final db = sqlite3.open(p.join(dir.path, 'matomate.db'));
     db.execute('PRAGMA journal_mode=WAL');
     db.execute('PRAGMA foreign_keys=ON');
@@ -130,6 +132,89 @@ class AppDb {
     db.execute("ATTACH DATABASE ? AS bible", [biblePath]);
     I = AppDb._(db, dir);
     return I;
+  }
+
+  /// Installe (ou met à jour) la bibliothèque de sermons livrée avec l'application.
+  /// La base est découpée en morceaux dans assets/sermons/ (voir tools/import_grenier.py)
+  /// et recopiée morceau par morceau pour rester légère en mémoire.
+  /// Les données personnelles et les sermons importés par l'utilisateur sont conservés.
+  static Future<void> _installSermonBundle(Directory dir, Settings settings, void Function(double)? onProgress) async {
+    Map<String, dynamic> manifest;
+    try {
+      manifest = jsonDecode(await rootBundle.loadString('assets/sermons/manifest.json')) as Map<String, dynamic>;
+    } catch (_) {
+      return; // aucune bibliothèque embarquée
+    }
+    final id = '${manifest['version']}-${manifest['bytes']}-${manifest['sermons']}';
+    final mainPath = p.join(dir.path, 'matomate.db');
+    if (settings.sermonsBundle == id && File(mainPath).existsSync()) return;
+
+    final parts = (manifest['parts'] as List).cast<String>();
+    final tmpPath = p.join(dir.path, 'matomate_new.db');
+    final tmp = File(tmpPath);
+    if (tmp.existsSync()) tmp.deleteSync();
+    final sink = tmp.openWrite();
+    for (var i = 0; i < parts.length; i++) {
+      final data = await rootBundle.load('assets/sermons/${parts[i]}');
+      sink.add(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
+      await sink.flush();
+      onProgress?.call((i + 1) / (parts.length + 1));
+    }
+    await sink.close();
+
+    final fresh = sqlite3.open(tmpPath);
+    try {
+      fresh.execute(sermonSchema);
+      fresh.execute(appSchema);
+      if (File(mainPath).existsSync()) {
+        fresh.execute('ATTACH DATABASE ? AS old', [mainPath]);
+        fresh.execute('BEGIN');
+        for (final t in const ['notes', 'favorites', 'highlights', 'history', 'search_history', 'activity',
+          'plan_state', 'plan_progress', 'translations_cache']) {
+          fresh.execute('INSERT OR IGNORE INTO main.$t SELECT * FROM old.$t');
+        }
+        // Sermons importés par l'utilisateur (absents de la bibliothèque embarquée).
+        final mine = fresh.select(
+            'SELECT o.* FROM old.sermons o WHERE NOT EXISTS '
+            '(SELECT 1 FROM main.sermons m WHERE m.code=o.code AND m.language=o.language)');
+        for (final r in mine) {
+          fresh.execute(
+              'INSERT INTO main.sermons(code,language,title,date,year,location,duration_sec,series,audio_url,audio_cues,'
+              'pdf_name,source,sha1,paragraph_count,translation_status,needs_review,review_notes) '
+              'VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+              [r['code'], r['language'], r['title'], r['date'], r['year'], r['location'], r['duration_sec'],
+                r['series'], r['audio_url'], r['audio_cues'], r['pdf_name'], r['source'], r['sha1'],
+                r['paragraph_count'], r['translation_status'], r['needs_review'], r['review_notes']]);
+          final nid = fresh.lastInsertRowId;
+          fresh.execute(
+              'INSERT INTO main.paragraphs(sermon_id, number, text, start_ms) '
+              'SELECT ?, number, text, start_ms FROM old.paragraphs WHERE sermon_id=? ORDER BY number',
+              [nid, r['id']]);
+          final oldPdf = File(p.join(dir.path, 'pdf', '${r['id']}.pdf'));
+          if (oldPdf.existsSync()) oldPdf.renameSync(p.join(dir.path, 'pdf', 'n$nid.pdf'));
+        }
+        fresh.execute('COMMIT');
+        fresh.execute('DETACH DATABASE old');
+      }
+    } finally {
+      fresh.dispose();
+    }
+    for (final suffix in ['', '-wal', '-shm']) {
+      final f = File('$mainPath$suffix');
+      if (f.existsSync()) f.deleteSync();
+    }
+    tmp.renameSync(mainPath);
+    // Les PDF des sermons importés ont été renommés « n<id>.pdf » : on retire le préfixe.
+    final pdfDir = Directory(p.join(dir.path, 'pdf'));
+    final files = pdfDir.listSync().whereType<File>().toList();
+    for (final f in files.where((f) => !p.basename(f.path).startsWith('n'))) {
+      f.deleteSync(); // PDF d'un sermon désormais fourni par la bibliothèque embarquée
+    }
+    for (final f in files.where((f) => p.basename(f.path).startsWith('n'))) {
+      f.renameSync(p.join(pdfDir.path, p.basename(f.path).substring(1)));
+    }
+    settings.sermonsBundle = id;
+    onProgress?.call(1);
   }
 
   // ---------------------------------------------------------------- Bible

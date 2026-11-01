@@ -12,3 +12,5 @@ ios/
 key.properties
 *.smpack
 *-rapport.csv
+assets/sermons/*.bin
+assets/sermons/manifest.json

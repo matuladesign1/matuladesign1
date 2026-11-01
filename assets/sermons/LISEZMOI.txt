@@ -1,0 +1,1 @@
+Bibliothèque générée à la compilation (tools/import_grenier.py).
