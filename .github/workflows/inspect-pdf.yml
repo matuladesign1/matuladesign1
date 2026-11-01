@@ -1,0 +1,50 @@
+name: Inspecter le PDF des sermons
+on:
+  push:
+    branches: [inspect-pdf]
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Outils
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils >/dev/null
+          pip install -q gdown
+      - name: Télécharger depuis Google Drive
+        run: |
+          gdown --fuzzy "https://drive.google.com/file/d/1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg/view" -O sermons.pdf
+          ls -la sermons.pdf
+      - name: Structure
+        run: |
+          pdfinfo sermons.pdf
+          pdftotext -enc UTF-8 sermons.pdf all.txt
+          echo "=== taille texte"; wc -c all.txt; wc -l all.txt
+          echo "=== pages 1-4"; pdftotext -f 1 -l 4 -enc UTF-8 sermons.pdf - | head -150
+          echo "=== codes trouvés (nombre)"; grep -oE '(^|[^0-9])(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?([^0-9]|$)' all.txt | wc -l
+          echo "=== codes distincts"; grep -oE '(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?' all.txt | sort -u | wc -l
+          echo "=== contexte des 40 premiers codes"; grep -nE '(^|[^0-9])(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?([^0-9]|$)' all.txt | head -40
+          echo "=== exemple autour du 3e code"; L=$(grep -nE '(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}' all.txt | sed -n 3p | cut -d: -f1); sed -n "$((L-15)),$((L+25))p" all.txt
+          echo "=== milieu du document (page 3000)"; pdftotext -f 3000 -l 3001 -enc UTF-8 sermons.pdf - | head -80
+          echo "=== signets"; pdftk --version >/dev/null 2>&1 || true; python3 -c "print('ok')"
+      - name: Signets (table des matières du PDF)
+        run: |
+          pip install -q pypdf
+          python3 - <<'P'
+          from pypdf import PdfReader
+          r=PdfReader("sermons.pdf")
+          print("pages:",len(r.pages))
+          out=[]
+          def walk(o,d=0):
+              for x in o:
+                  if isinstance(x,list): walk(x,d+1)
+                  else:
+                      try: out.append((d,x.title,r.get_destination_page_number(x)))
+                      except Exception as e: out.append((d,str(x),-1))
+          try: walk(r.outline)
+          except Exception as e: print("outline err",e)
+          print("signets:",len(out))
+          for o in out[:60]: print(o)
+          print("...")
+          for o in out[-15:]: print(o)
+          P
