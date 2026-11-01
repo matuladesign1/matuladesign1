@@ -1,0 +1,67 @@
+name: sermons_branham_matomate
+description: "Sermons de Branham Matomate — Bible, prédications, recherche et assistant. Matula Design & Pasteur Ben MATOMATE."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqlite3: ^2.4.6
+  sqlite3_flutter_libs: ^0.5.26
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  provider: ^6.1.2
+  shared_preferences: ^2.3.2
+  file_picker: ^8.1.4
+  archive: ^3.6.1
+  crypto: ^3.0.5
+  syncfusion_flutter_pdf: ^27.1.58
+  just_audio: ^0.9.42
+  just_audio_background: ^0.0.1-beta.13
+  share_plus: ^10.1.2
+  http: ^1.2.2
+  open_filex: ^4.5.0
+  scrollable_positioned_list: ^0.3.8
+  flutter_tts: ^4.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
+  flutter_native_splash: ^2.4.3
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/db/
+    - assets/images/
+  fonts:
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora.ttf
+        - asset: assets/fonts/Lora-Italic.ttf
+          style: italic
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/branding/logo.png"
+  adaptive_icon_background: "#071D45"
+  adaptive_icon_foreground: "assets/branding/icon_foreground.png"
+  min_sdk_android: 24
+
+flutter_native_splash:
+  color: "#071D45"
+  image: assets/branding/splash.png
+  android_12:
+    color: "#071D45"
+    image: assets/branding/splash.png
+  android: true
+  ios: false
+  web: false

@@ -1,0 +1,127 @@
+name: Compiler et tester l'APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.27.4'
+
+jobs:
+  build:
+    name: Compilation Android
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HAS_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Générer le dossier Android
+        run: |
+          flutter create --platforms=android --org com.matuladesign --project-name sermons_branham_matomate .
+          python3 tools/patch_android.py
+
+      - name: Clé de signature (si configurée)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        if: env.HAS_KEYSTORE == 'true'
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Dépendances, icône et écran de démarrage
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
+          dart run flutter_native_splash:create
+
+      - name: Analyse du code
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Tests unitaires
+        run: flutter test
+
+      - name: APK de test (debug)
+        run: flutter build apk --debug
+
+      - name: APK Release + AAB Google Play
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk dist/SermonsBranhamMatomate-test.apk
+          cp build/app/outputs/flutter-apk/app-release.apk dist/SermonsBranhamMatomate.apk
+          cp build/app/outputs/bundle/release/app-release.aab dist/SermonsBranhamMatomate.aab
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SermonsBranhamMatomate-android
+          path: dist/
+          retention-days: 30
+
+      - name: Publier la version (tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+
+  device-test:
+    name: Test sur émulateur Android 7.0 et 13
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [24, 33]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Préparer le projet
+        run: |
+          flutter create --platforms=android --org com.matuladesign --project-name sermons_branham_matomate .
+          python3 tools/patch_android.py
+          flutter pub get
+      - name: Activer KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Tests d'intégration sur l'émulateur
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: flutter test integration_test --timeout 10m
