@@ -13,8 +13,8 @@ jobs:
           pip install -q gdown
       - name: Télécharger depuis Google Drive
         run: |
-          gdown --fuzzy "https://drive.google.com/file/d/1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg/view" -O sermons.pdf
-          ls -la sermons.pdf
+          gdown --retries 3 "1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf || gdown "https://drive.google.com/uc?id=1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf
+          ls -la sermons.pdf; head -c 8 sermons.pdf; echo
       - name: Structure
         run: |
           pdfinfo sermons.pdf
