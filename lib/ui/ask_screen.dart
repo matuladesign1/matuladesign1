@@ -5,7 +5,6 @@ import '../core/settings.dart';
 import '../core/theme.dart';
 import '../data/ai_service.dart';
 import 'search_screen.dart';
-import 'widgets.dart';
 
 class _Turn {
   _Turn(this.question);

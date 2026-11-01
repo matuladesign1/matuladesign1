@@ -41,7 +41,7 @@ class SearchService {
     'en', 'dans', 'sur', 'pour', 'par', 'que', 'qui', 'quoi', 'ce', 'cet', 'cette', 'ces',
     'est', 'il', 'elle', 'ils', 'on', 'nous', 'vous', 'je', 'tu', 'se', 's', 'ne', 'pas',
     'plus', 'son', 'sa', 'ses', 'leur', 'leurs', 'mon', 'ma', 'mes', 'y', 'dit', 'dire',
-    'parle', 'parler', 'quel', 'quels', 'quelle', 'quelles', 'ou', 'comment', 'pourquoi',
+    'parle', 'parler', 'quel', 'quels', 'quelle', 'quelles', 'comment', 'pourquoi',
     'branham', 'sermon', 'sermons', 'predication', 'predications', 'passage', 'passages',
     'trouve', 'trouver', 'montre', 'moi', 'tous', 'toutes', 'explique', 'expliquer',
   };
