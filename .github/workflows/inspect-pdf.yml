@@ -5,46 +5,38 @@ on:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
+      - uses: actions/checkout@v4
       - name: Outils
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils >/dev/null
-          pip install -q gdown
+          pip install -q gdown pypdf
       - name: Télécharger depuis Google Drive
+        run: gdown --retries 3 "1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf
+      - name: Construire la bibliothèque
+        run: python3 tools/import_grenier.py sermons.pdf out --keep-db full.db
+      - name: Contrôles
         run: |
-          gdown --retries 3 "1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf || gdown "https://drive.google.com/uc?id=1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf
-          ls -la sermons.pdf; head -c 8 sermons.pdf; echo
-      - name: Structure
-        run: |
-          pdfinfo sermons.pdf
-          pdftotext -enc UTF-8 sermons.pdf all.txt
-          echo "=== taille texte"; wc -c all.txt; wc -l all.txt
-          echo "=== pages 1-4"; pdftotext -f 1 -l 4 -enc UTF-8 sermons.pdf - | head -150
-          echo "=== codes trouvés (nombre)"; grep -oE '(^|[^0-9])(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?([^0-9]|$)' all.txt | wc -l
-          echo "=== codes distincts"; grep -oE '(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?' all.txt | sort -u | wc -l
-          echo "=== contexte des 40 premiers codes"; grep -nE '(^|[^0-9])(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}[MAESBX]?([^0-9]|$)' all.txt | head -40
-          echo "=== exemple autour du 3e code"; L=$(grep -nE '(4[7-9]|5[0-9]|6[0-5])-[0-9]{4}' all.txt | sed -n 3p | cut -d: -f1); sed -n "$((L-15)),$((L+25))p" all.txt
-          echo "=== milieu du document (page 3000)"; pdftotext -f 3000 -l 3001 -enc UTF-8 sermons.pdf - | head -80
-          echo "=== signets"; pdftk --version >/dev/null 2>&1 || true; python3 -c "print('ok')"
-      - name: Signets (table des matières du PDF)
-        run: |
-          pip install -q pypdf
+          ls -la out | head; du -sh out
           python3 - <<'P'
-          from pypdf import PdfReader
-          r=PdfReader("sermons.pdf")
-          print("pages:",len(r.pages))
-          out=[]
-          def walk(o,d=0):
-              for x in o:
-                  if isinstance(x,list): walk(x,d+1)
-                  else:
-                      try: out.append((d,x.title,r.get_destination_page_number(x)))
-                      except Exception as e: out.append((d,str(x),-1))
-          try: walk(r.outline)
-          except Exception as e: print("outline err",e)
-          print("signets:",len(out))
-          for o in out[:60]: print(o)
-          print("...")
-          for o in out[-15:]: print(o)
+          import sqlite3
+          d=sqlite3.connect("full.db")
+          print("sermons", d.execute("select count(*), count(distinct code) from sermons").fetchone())
+          print("années", d.execute("select year,count(*) from sermons group by year").fetchall())
+          print("sans lieu", d.execute("select count(*) from sermons where location is null").fetchone())
+          print("à vérifier", d.execute("select count(*) from sermons where needs_review=1").fetchone())
+          print("§ par sermon: min/avg/max", d.execute("select min(paragraph_count),avg(paragraph_count),max(paragraph_count) from sermons").fetchone())
+          print("1 seul §", d.execute("select count(*) from sermons where paragraph_count<=2").fetchone())
+          print("séries", d.execute("select series,count(*) from sermons where series is not null group by series").fetchall())
+          for code in ("47-0412","63-0318","65-1127B"):
+              r=d.execute("select id,code,title,date,location,paragraph_count,review_notes from sermons where code like ?",(code+"%",)).fetchone()
+              print("\n===",r)
+              if r:
+                  for n,t in d.execute("select number,text from paragraphs where sermon_id=? and number in (1,2,3,10) order by number",(r[0],)):
+                      print(n,":",t[:300])
+                  print("dernier:", d.execute("select number,text from paragraphs where sermon_id=? order by number desc limit 1",(r[0],)).fetchone()[1][-300:])
+          print("\nrecherche exacte 'le temps de la fin':", d.execute("select count(*) from paragraphs_fts where paragraphs_fts match '\"le temps de la fin\"'").fetchone())
+          print("lieux fréquents", d.execute("select location,count(*) c from sermons group by location order by c desc limit 12").fetchall())
+          print("exemples à vérifier", d.execute("select code,title,review_notes from sermons where needs_review=1 limit 15").fetchall())
           P
