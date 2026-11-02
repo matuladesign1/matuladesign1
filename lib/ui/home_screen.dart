@@ -57,55 +57,86 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return SafeArea(
       child: ListView(padding: const EdgeInsets.only(bottom: 24), children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 12, 0),
-          child: Row(children: [
-            ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset('assets/images/logo_small.png', width: 40, height: 40)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('${s.t('hello')}$name',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.headlineSmall!.copyWith(fontWeight: FontWeight.w700)),
-            ),
-            Tooltip(
-              message: '$streak jour(s) consécutif(s)',
-              child: Row(children: [
-                const Icon(Icons.bolt_outlined),
-                Text('$streak', style: const TextStyle(fontSize: 18)),
-              ]),
-            ),
-            IconButton(
-              icon: const Icon(Icons.notifications_none_rounded),
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen(focusNotifications: true))),
-            ),
-            GestureDetector(
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: Brand.royalBlue,
-                child: Text(settings.userName.isEmpty ? '?' : settings.userName[0].toUpperCase(),
-                    style: const TextStyle(color: Brand.brightYellow, fontWeight: FontWeight.bold)),
+        Container(
+          decoration: const BoxDecoration(
+            gradient: Brand.skyGradient,
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 18),
+          child: Column(children: [
+            Row(children: [
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Brand.gold, width: 1.5),
+                  boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 8)],
+                ),
+                child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.asset('assets/images/logo_small.png', width: 52, height: 52)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('${s.t('hello')}$name',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontFamily: readingFont, fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white)),
+                  ShaderMask(
+                    shaderCallback: (r) => Brand.goldGradient.createShader(r),
+                    child: const Text('Sermons de Branham Matomate',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, letterSpacing: .4, color: Colors.white)),
+                  ),
+                ]),
+              ),
+              Tooltip(
+                message: '$streak jour(s) consécutif(s)',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white12, borderRadius: BorderRadius.circular(20)),
+                  child: Row(children: [
+                    const Icon(Icons.bolt_rounded, color: Brand.brightYellow, size: 20),
+                    Text('$streak', style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+                onPressed: () =>
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen(focusNotifications: true))),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+                child: CircleAvatar(
+                  radius: 19,
+                  backgroundColor: Brand.gold,
+                  child: Text(settings.userName.isEmpty ? '?' : settings.userName[0].toUpperCase(),
+                      style: const TextStyle(color: Brand.deepBlue, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _ask,
+              textInputAction: TextInputAction.send,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                hintText: s.t('askHint'),
+                prefixIcon: const Icon(Icons.auto_awesome, color: Brand.gold),
+                suffixIcon: Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: IconButton.filled(
+                    style: IconButton.styleFrom(backgroundColor: Brand.gold, foregroundColor: Brand.deepBlue),
+                    onPressed: _submit,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                  ),
+                ),
               ),
             ),
           ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: TextField(
-            controller: _ask,
-            textInputAction: TextInputAction.send,
-            onSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              hintText: s.t('askHint'),
-              suffixIcon: Padding(
-                padding: const EdgeInsets.all(6),
-                child: IconButton.filledTonal(onPressed: _submit, icon: const Icon(Icons.arrow_forward_rounded)),
-              ),
-            ),
-          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -160,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: IconTile(
                     icon: Icons.account_circle_outlined,
                     label: s.t('profile'),
-                    color: Brand.lightBlue,
+                    color: Theme.of(context).colorScheme.primary,
                     onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())))),
             const SizedBox(width: 10),
             Expanded(

@@ -41,8 +41,8 @@ class SearchScreenState extends State<SearchScreen> {
           padding: const EdgeInsets.only(right: 10),
           child: IconButton.filled(
             style: IconButton.styleFrom(
-                backgroundColor: active ? const Color(0xFF2C3440) : cs.surfaceContainerHigh,
-                foregroundColor: active ? Brand.lightBlue : cs.onSurface,
+                backgroundColor: active ? cs.primaryContainer : cs.surfaceContainerHigh,
+                foregroundColor: active ? cs.onPrimaryContainer : cs.onSurface,
                 fixedSize: const Size(52, 52)),
             onPressed: onTap,
             icon: Icon(i),
@@ -92,7 +92,8 @@ class _SearchViewState extends State<SearchView> {
   final _scroll = ScrollController();
   SearchMode mode = SearchMode.words;
   bool thisOne = false;
-  bool inSermons = true, inBible = true;
+  /// Portée : 'all', 'titles', 'paragraphs', 'brochures', 'bible'.
+  String where = 'all';
   Timer? _debounce;
   List<SearchHit> hits = [];
   int total = 0;
@@ -125,8 +126,10 @@ class _SearchViewState extends State<SearchView> {
   }
 
   SearchScope get _scope => SearchScope(
-        sermons: inSermons,
-        bible: inBible,
+        titles: where == 'all' || where == 'titles' || where == 'brochures',
+        sermons: where == 'all' || where == 'paragraphs',
+        brochures: where == 'all' || where == 'brochures',
+        bible: where == 'all' || where == 'bible',
         notes: context.read<Settings>().searchNotes,
         sermonId: _targetSermon,
       );
@@ -206,7 +209,7 @@ class _SearchViewState extends State<SearchView> {
                   decoration: BoxDecoration(
                     color: thisOne == v ? cs.surfaceContainerHigh : null,
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                    border: Border(bottom: BorderSide(color: thisOne == v ? Brand.lightBlue : Colors.transparent, width: 3)),
+                    border: Border(bottom: BorderSide(color: thisOne == v ? Theme.of(context).colorScheme.primary : Colors.transparent, width: 3)),
                   ),
                   child: Text(label,
                       textAlign: TextAlign.center,
@@ -271,22 +274,38 @@ class _SearchViewState extends State<SearchView> {
               Shell.of(context).ask(_ctrl.text.trim().isEmpty ? '' : _ctrl.text.trim());
             },
           ),
-          PopupMenuButton<String>(
-            tooltip: 'Où chercher',
-            icon: const Icon(Icons.public_rounded),
-            onSelected: (v) {
-              setState(() {
-                if (v == 'sermons') inSermons = !inSermons;
-                if (v == 'bible') inBible = !inBible;
-              });
-              if (!empty) _run();
-            },
-            itemBuilder: (_) => [
-              CheckedPopupMenuItem(value: 'sermons', checked: inSermons, child: const Text('Prédications')),
-              CheckedPopupMenuItem(value: 'bible', checked: inBible, child: const Text('Bible')),
-            ],
-          ),
         ]),
+      ),
+      SizedBox(
+        height: 48,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          children: [
+            for (final (k, icon, label) in const [
+              ('all', Icons.select_all_rounded, 'Tout'),
+              ('titles', Icons.title_rounded, 'Titres'),
+              ('paragraphs', Icons.format_align_left_rounded, 'Paragraphes'),
+              ('brochures', Icons.auto_stories_outlined, 'Brochures'),
+              ('bible', Icons.menu_book_outlined, 'Bible'),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  avatar: Icon(icon, size: 18),
+                  label: Text(label),
+                  selected: where == k,
+                  showCheckmark: false,
+                  onSelected: thisOne && k != 'paragraphs' && k != 'all'
+                      ? null
+                      : (_) {
+                          setState(() => where = k);
+                          if (!empty) _run();
+                        },
+                ),
+              ),
+          ],
+        ),
       ),
       const Divider(),
       Expanded(
@@ -382,7 +401,7 @@ class _Help extends StatelessWidget {
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(kind, style: const TextStyle(color: Brand.gold, fontSize: 16)),
                 const SizedBox(height: 4),
-                Text('« $q »', style: const TextStyle(color: Brand.lightBlue, fontSize: 20)),
+                Text('« $q »', style: TextStyle(color: Theme.of(context).colorScheme.tertiary, fontSize: 20)),
                 const SizedBox(height: 4),
                 Text(desc, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 15)),
               ]),
@@ -398,6 +417,8 @@ class _Help extends StatelessWidget {
       const SizedBox(height: 22),
       if (mode == SearchMode.meaning)
         example('Sens', 'Le retour de Jésus-Christ', 'Les passages qui développent cette idée.', SearchMode.meaning),
+      example('Titres', 'premier sceau', 'Trouve les prédications et les brochures par leur titre, leur code ou leur lieu.',
+          SearchMode.words),
       example(s.t('exact'), 'le temps de la fin', s.t('exactEx'), SearchMode.exact),
       example(s.t('words'), 'colombe agneau', s.t('wordsEx'), SearchMode.words),
     ]);
@@ -420,6 +441,8 @@ class _HitCardState extends State<HitCard> {
   void _go() {
     final h = widget.hit;
     switch (h.kind) {
+      case HitKind.title:
+        Navigator.push(context, MaterialPageRoute(builder: (_) => SermonReader(sermonId: h.sermonId!)));
       case HitKind.sermon:
         Navigator.push(context,
             MaterialPageRoute(builder: (_) => SermonReader(sermonId: h.sermonId!, paragraph: h.number, highlightParagraph: h.number)));
@@ -441,6 +464,25 @@ class _HitCardState extends State<HitCard> {
         ? context.read<SearchService>().context(h.sermonId!, h.number!)
         : null;
     final lang = h.language == null || h.language == 'fr' ? '' : ' · ${h.language!.toUpperCase()}';
+    if (h.kind == HitKind.title) {
+      return Card(
+        child: ListTile(
+          contentPadding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+          leading: CircleAvatar(
+            backgroundColor: cs.secondaryContainer,
+            child: Icon(h.reference.startsWith('Brochure') ? Icons.auto_stories_outlined : Icons.title_rounded,
+                color: cs.secondary),
+          ),
+          title: MarkedText(h.snippet,
+              style: const TextStyle(fontFamily: readingFont, fontSize: 17, fontWeight: FontWeight.w600)),
+          subtitle: Text([('${h.reference}$lang'), if (h.subtitle.isNotEmpty) h.subtitle].join('\n'),
+              style: TextStyle(color: cs.onSurfaceVariant)),
+          isThreeLine: h.subtitle.isNotEmpty,
+          trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+          onTap: _go,
+        ),
+      );
+    }
     return Card(
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -461,7 +503,7 @@ class _HitCardState extends State<HitCard> {
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(h.title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
                   Text('${h.reference}$lang',
-                      style: const TextStyle(color: Brand.lightBlue, fontWeight: FontWeight.w600)),
+                      style: TextStyle(color: cs.tertiary, fontWeight: FontWeight.w600)),
                   if (h.subtitle.isNotEmpty) Text(h.subtitle, style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13)),
                 ]),
               ),
@@ -489,7 +531,13 @@ class _HitCardState extends State<HitCard> {
               child: TextButton.icon(
                 onPressed: _go,
                 icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: Text(h.kind == HitKind.bible ? 'Lire dans la Bible' : h.kind == HitKind.note ? 'Ouvrir la note' : 'Lire dans le sermon'),
+                label: Text(h.kind == HitKind.bible
+                    ? 'Lire dans la Bible'
+                    : h.kind == HitKind.note
+                        ? 'Ouvrir la note'
+                        : h.reference.startsWith('Brochure')
+                            ? 'Lire dans la brochure'
+                            : 'Lire dans le sermon'),
               ),
             ),
           ]),
@@ -569,8 +617,8 @@ class _IndexViewState extends State<IndexView> {
                 IconButton.filled(
                   style: IconButton.styleFrom(
                     fixedSize: const Size(56, 56),
-                    backgroundColor: order == key ? Brand.lightBlue : cs.surfaceContainerHighest,
-                    foregroundColor: order == key ? Brand.black : cs.onSurface,
+                    backgroundColor: order == key ? cs.primary : cs.surfaceContainerHighest,
+                    foregroundColor: order == key ? cs.onPrimary : cs.onSurface,
                   ),
                   icon: Icon(icon),
                   onPressed: () => setState(() {
@@ -619,7 +667,7 @@ class _IndexViewState extends State<IndexView> {
                     child: Center(
                       child: Text.rich(TextSpan(children: [
                         TextSpan(text: 'AFFICHAGE: ', style: TextStyle(letterSpacing: 1.5, color: cs.onSurfaceVariant)),
-                        TextSpan(text: e.value, style: const TextStyle(letterSpacing: 1.5, color: Brand.lightBlue)),
+                        TextSpan(text: e.value, style: TextStyle(letterSpacing: 1.5, color: Theme.of(context).colorScheme.tertiary)),
                       ])),
                     ),
                   ),
@@ -664,7 +712,7 @@ class SermonRow extends StatelessWidget {
               Text(s.title, style: const TextStyle(fontSize: 19)),
               const SizedBox(height: 4),
               Row(children: [
-                Text(s.code, style: const TextStyle(color: Brand.lightBlue, fontSize: 18, fontWeight: FontWeight.w700)),
+                Text(s.displayCode, style: TextStyle(color: cs.tertiary, fontSize: 18, fontWeight: FontWeight.w700)),
                 if (s.language != 'fr')
                   Padding(
                     padding: const EdgeInsets.only(left: 8),

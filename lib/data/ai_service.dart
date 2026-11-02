@@ -69,12 +69,12 @@ class AiService {
     // Une expression entre guillemets dans la question = recherche exacte.
     final quoted = RegExp(r'[«"]\s*([^»"]+?)\s*[»"]').firstMatch(question);
     if (quoted != null) {
-      final exact = search.search(quoted[1]!, SearchMode.exact, limit: limit);
+      final exact = search.search(quoted[1]!, SearchMode.exact, limit: limit, scope: const SearchScope(titles: false));
       if (exact.hits.isNotEmpty) return exact.hits;
     }
-    final words = search.search(question, SearchMode.words, limit: limit);
+    final words = search.search(question, SearchMode.words, limit: limit, scope: const SearchScope(titles: false));
     if (words.hits.length >= 3) return words.hits;
-    return search.search(question, SearchMode.meaning, limit: limit).hits;
+    return search.search(question, SearchMode.meaning, limit: limit, scope: const SearchScope(titles: false)).hits;
   }
 
   Future<AiAnswer> ask(String question) async {

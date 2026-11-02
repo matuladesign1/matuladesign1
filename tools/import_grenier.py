@@ -193,6 +193,26 @@ def fallback_paragraphs(text):
     return [(i + 1, b) for i, b in enumerate(blocks)]
 
 
+COLLECTION_NAMES = {
+    "frere branham": "Frère Branham : sa vie et son ministère",
+    "la revelation de sept sceaux": "La Révélation des Sept Sceaux",
+    "le livre des hebreux": "Le Livre des Hébreux",
+    "le saint esprit": "Le Saint-Esprit",
+    "adoption": "L'Adoption",
+    "les soixante-dix semaines de daniel": "Les Soixante-dix Semaines de Daniel",
+    "l'eglise": "L'Église",
+    "demonologie": "La Démonologie",
+    "conduite, ordre et doctrine de l’eglise": "Conduite, Ordre et Doctrine de l'Église",
+    "conduite, ordre et doctrine de l'eglise": "Conduite, Ordre et Doctrine de l'Église",
+}
+EXPOSE = "Exposé des Sept Âges de l'Église"
+TRAILING_CODE = re.compile(r"((?:4[7-9]|5\d|6[0-5])-\d{4}[A-Z]?)\s*$")
+
+
+def nice_collection(name):
+    return COLLECTION_NAMES.get(fold(name).replace("’", "'"), COLLECTION_NAMES.get(fold(name), name))
+
+
 def date_from_code(code):
     yy, mm, dd = code[:2], code[3:5], code[5:7]
     if 1 <= int(mm) <= 12 and 1 <= int(dd) <= 31:
@@ -228,6 +248,26 @@ def main():
     chrono.sort()
     print(f"Sermons dans les signets chronologiques : {len(chrono)}")
 
+    # Brochures : recueils de la section « Livres » + chapitres de l'Exposé des Sept Âges.
+    collections, brochures = [], []
+    for path, title, pg in items:
+        if not path:
+            continue
+        top = fold(path[0])
+        if top.startswith("livres") and len(path) >= 2:
+            m = TRAILING_CODE.search(title)
+            if m:
+                collections.append((nice_collection(path[1]), m.group(1).upper()))
+        elif top.startswith("expos"):
+            code = f"EXP-{len(brochures) + 1:02d}"
+            brochures.append((pg, code, title))
+            collections.append((EXPOSE, code))
+    print(f"Brochures : {len(set(c for c, _ in collections))} recueils, {len(brochures)} chapitres d'exposé")
+    first_collection = {}
+    for name, code in collections:
+        if not name.startswith("Conduite") and not name.startswith("Frère"):
+            first_collection.setdefault(code, name)
+
     print("Extraction du texte…", flush=True)
     pages = page_texts(a.pdf)
     print(f"{len(pages)} pages extraites")
@@ -243,7 +283,9 @@ def main():
         db.executescript(s)
 
     report, total_paras, review = [], 0, 0
-    for i, (start, code, title) in enumerate(chrono):
+    docs = [(pg, code, title, "sermon") for pg, code, title in chrono] + \
+           [(pg, code, title, "brochure") for pg, code, title in brochures]
+    for i, (start, code, title, kind) in enumerate(docs):
         end = next((p for p in starts if p > start), npages)
         raw_pages = pages[start:end]
         text, footer_loc = clean_pages(raw_pages, title)
@@ -256,14 +298,15 @@ def main():
                 if DATE_LINE.match(l) and j + 1 < len(pre):
                     location = pre[j + 1].title()
                     break
-        location = clean_location(location)
-        if not location:
+        location = clean_location(location) if kind == "sermon" else None
+        if not location and kind == "sermon":
             notes.append("lieu introuvable")
         if len(paras) <= 2:
             fb = strip_colophon(fallback_paragraphs(text))
             if len(fb) > len(paras):
                 paras = fb
-                notes.append("paragraphes non numérotés dans l'original (renumérotés)")
+                if kind == "sermon":
+                    notes.append("paragraphes non numérotés dans l'original (renumérotés)")
         if not paras:
             notes.append("paragraphes non reconnus (texte conservé en un bloc)")
             body = " ".join(text.split())
@@ -275,12 +318,17 @@ def main():
         if not paras:
             report.append((code, title, "vide"))
             continue
-        date = date_from_code(code)
+        if kind == "sermon":
+            date, year = date_from_code(code), int("19" + code[:2])
+            series = SERIES_BY_BASE.get(code[:7]) or first_collection.get(code)
+        else:
+            date, year, series = None, None, EXPOSE
+            notes = [n for n in notes if not n.startswith("numérotation")]
         cur = db.execute(
             "INSERT OR IGNORE INTO sermons(code,language,title,date,year,location,series,source,"
-            "paragraph_count,needs_review,review_notes) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (code, "fr", title, date, int("19" + code[:2]), location, SERIES_BY_BASE.get(code[:7]),
-             SOURCE, len(paras), 1 if notes else 0, "; ".join(notes) or None))
+            "paragraph_count,needs_review,review_notes,kind) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (code, "fr", title, date, year, location, series,
+             SOURCE, len(paras), 1 if notes else 0, "; ".join(notes) or None, kind))
         if cur.rowcount == 0:
             continue
         sid = cur.lastrowid
@@ -291,13 +339,21 @@ def main():
             review += 1
             report.append((code, title, "; ".join(notes)))
         if i % 100 == 0:
-            print(f"  {i}/{len(chrono)}  {code}  {title[:50]}  {len(paras)} §  {location}", flush=True)
+            print(f"  {i}/{len(docs)}  {code}  {title[:50]}  {len(paras)} §  {location}", flush=True)
             db.commit()
     db.commit()
+    known = {r[0] for r in db.execute("SELECT code FROM sermons")}
+    pos = Counter()
+    for name, code in collections:
+        if code in known:
+            pos[name] += 1
+            db.execute("INSERT OR IGNORE INTO collections(name, code, position) VALUES(?,?,?)", (name, code, pos[name]))
+    db.commit()
+    print("Recueils :", dict(pos))
     db.execute("INSERT INTO paragraphs_fts(paragraphs_fts) VALUES('optimize')")
     db.commit()
     db.execute("VACUUM")
-    n = db.execute("SELECT count(*) FROM sermons").fetchone()[0]
+    n = db.execute("SELECT count(*) FROM sermons WHERE kind='sermon'").fetchone()[0]
     db.close()
 
     if a.keep_db:

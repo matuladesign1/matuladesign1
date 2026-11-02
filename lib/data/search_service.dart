@@ -5,8 +5,25 @@ import 'models.dart';
 
 /// Portée d'une recherche.
 class SearchScope {
-  const SearchScope({this.sermons = true, this.bible = true, this.notes = false, this.sermonId});
-  final bool sermons, bible, notes;
+  const SearchScope({
+    this.titles = true,
+    this.sermons = true,
+    this.brochures = true,
+    this.bible = true,
+    this.notes = false,
+    this.sermonId,
+  });
+
+  /// Titres des prédications et des brochures (ainsi que code et lieu).
+  final bool titles;
+
+  /// Paragraphes des prédications.
+  final bool sermons;
+
+  /// Paragraphes des brochures (recueils thématiques : Sept Sceaux, Hébreux, Exposé des Sept Âges…).
+  final bool brochures;
+
+  final bool bible, notes;
 
   /// Limite la recherche à un seul sermon (onglet « CELLE-CI »).
   final int? sermonId;
@@ -118,34 +135,89 @@ class SearchService {
     final match = buildMatch(query, mode, prefixLast: live && mode == SearchMode.words);
     if (match == null) return SearchPage(const [], 0);
 
-    final sermonFilter = scope.sermonId != null ? ' AND p.sermon_id = ${scope.sermonId}' : '';
-    final order = scope.sermonId != null && mode != SearchMode.meaning ? 'p.number' : 'bm25(paragraphs_fts)';
+    final single = scope.sermonId != null;
+    final order = single && mode != SearchMode.meaning ? 'p.number' : 'bm25(paragraphs_fts)';
 
-    final nS = scope.sermons
+    // Filtre des paragraphes selon la portée choisie.
+    String? paraFilter;
+    if (single) {
+      paraFilter = ' AND p.sermon_id = ${scope.sermonId}';
+    } else if (scope.sermons && scope.brochures) {
+      paraFilter = '';
+    } else if (scope.sermons) {
+      paraFilter = " AND s.kind = 'sermon'";
+    } else if (scope.brochures) {
+      paraFilter = " AND (s.kind = 'brochure' OR s.code IN (SELECT code FROM collections))";
+    }
+
+    // Titres (uniquement en recherche globale ; « Sens » cherche aussi les mots du titre).
+    final titleMatch = mode == SearchMode.exact ? match : buildMatch(query, SearchMode.words, prefixLast: true);
+    String titleFilter = '';
+    if (!scope.sermons && scope.brochures) {
+      titleFilter = " AND (s.kind = 'brochure' OR s.code IN (SELECT code FROM collections))";
+    }
+    final doTitles = scope.titles && !single && titleMatch != null;
+    final nT = doTitles
+        ? _count(
+            'SELECT count(*) c FROM sermons_fts JOIN sermons s ON s.id=sermons_fts.rowid '
+            "WHERE sermons_fts MATCH ? AND s.translation_status != 'ia_non_validee'$titleFilter",
+            [titleMatch])
+        : 0;
+
+    final nS = paraFilter != null
         ? _count(
             'SELECT count(*) c FROM paragraphs_fts JOIN paragraphs p ON p.id=paragraphs_fts.rowid '
-            'WHERE paragraphs_fts MATCH ?$sermonFilter',
+            'JOIN sermons s ON s.id=p.sermon_id '
+            'WHERE paragraphs_fts MATCH ?$paraFilter',
             [match])
         : 0;
-    final doBible = scope.bible && scope.sermonId == null;
+    final doBible = scope.bible && !single;
     final nB = doBible ? _count('SELECT count(*) c FROM bible.verses_fts WHERE verses_fts MATCH ?', [match]) : 0;
-    final doNotes = scope.notes && scope.sermonId == null;
+    final doNotes = scope.notes && !single;
     final nN = doNotes ? _count('SELECT count(*) c FROM notes_fts WHERE notes_fts MATCH ?', [match]) : 0;
 
     final hits = <SearchHit>[];
     var off = offset;
     var left = limit;
 
-    if (left > 0 && off < nS) {
+    if (left > 0 && doTitles && off < nT) {
       final rows = adb.db.select(
-          "SELECT p.id, p.sermon_id, p.number, s.title, s.code, s.date, s.location, s.language, "
+          "SELECT s.id, s.code, s.title, s.date, s.location, s.language, s.kind, s.paragraph_count, "
+          "highlight(sermons_fts, 0, char(1), char(2)) hl "
+          'FROM sermons_fts JOIN sermons s ON s.id=sermons_fts.rowid '
+          "WHERE sermons_fts MATCH ? AND s.translation_status != 'ia_non_validee'$titleFilter "
+          'ORDER BY bm25(sermons_fts, 10.0, 5.0, 1.0), s.code LIMIT ? OFFSET ?',
+          [titleMatch, left, off]);
+      for (final r in rows) {
+        final brochure = r['kind'] == 'brochure';
+        hits.add(SearchHit(
+          kind: HitKind.title,
+          id: r['id'] as int,
+          sermonId: r['id'] as int,
+          language: r['language'] as String,
+          title: r['title'] as String,
+          reference: brochure ? 'Brochure · ${r['paragraph_count']} §' : '${r['code']} · ${r['paragraph_count']} §',
+          subtitle: [r['location'] ?? '', r['date'] ?? ''].where((e) => '$e'.isNotEmpty).join(' · '),
+          snippet: r['hl'] as String,
+        ));
+      }
+      left -= rows.length;
+      off = 0;
+    } else if (doTitles) {
+      off -= nT;
+    }
+
+    if (left > 0 && paraFilter != null && off < nS) {
+      final rows = adb.db.select(
+          "SELECT p.id, p.sermon_id, p.number, s.title, s.code, s.date, s.location, s.language, s.kind, "
           "snippet(paragraphs_fts, 0, char(1), char(2), '…', 48) snip "
           'FROM paragraphs_fts JOIN paragraphs p ON p.id=paragraphs_fts.rowid '
           'JOIN sermons s ON s.id=p.sermon_id '
-          'WHERE paragraphs_fts MATCH ?$sermonFilter ORDER BY $order LIMIT ? OFFSET ?',
+          'WHERE paragraphs_fts MATCH ?$paraFilter ORDER BY $order LIMIT ? OFFSET ?',
           [match, left, off]);
       for (final r in rows) {
         final loc = (r['location'] as String?) ?? '';
+        final brochure = r['kind'] == 'brochure';
         hits.add(SearchHit(
           kind: HitKind.sermon,
           id: r['id'] as int,
@@ -153,14 +225,14 @@ class SearchService {
           number: r['number'] as int,
           language: r['language'] as String,
           title: r['title'] as String,
-          reference: '${r['code']} · ¶${r['number']}',
+          reference: brochure ? 'Brochure · ¶${r['number']}' : '${r['code']} · ¶${r['number']}',
           subtitle: [loc, r['date'] ?? ''].where((e) => '$e'.isNotEmpty).join(' · '),
           snippet: r['snip'] as String,
         ));
       }
       left -= rows.length;
       off = 0;
-    } else {
+    } else if (paraFilter != null) {
       off -= nS;
     }
 
@@ -204,7 +276,7 @@ class SearchService {
       }
     }
 
-    final total = nS + nB + nN;
+    final total = nT + nS + nB + nN;
     String? suggestion;
     if (total == 0 && offset == 0 && mode != SearchMode.meaning) suggestion = suggest(query);
     return SearchPage(hits, total, suggestion: suggestion, approximate: mode == SearchMode.meaning);

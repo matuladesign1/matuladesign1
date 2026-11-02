@@ -54,6 +54,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
         'year' => adb.sermons(year: int.parse(openKey!)),
         'series' => adb.sermons(series: openKey),
         'location' => adb.sermons(location: openKey),
+        'brochures' => adb.collectionSermons(openKey!),
         _ => adb.sermons(),
       };
       body = ListView.separated(
@@ -77,6 +78,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             for (final sName in _defaultSeries) sName: adb.seriesCounts()[sName] ?? 0,
             ...adb.seriesCounts(),
           },
+        'brochures' => adb.collectionCounts(),
         _ => adb.locationCounts(),
       };
       body = ListView(children: [
@@ -87,7 +89,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ? Icons.calendar_month_outlined
                 : group == 'series'
                     ? Icons.collections_bookmark_outlined
-                    : Icons.place_outlined),
+                    : group == 'brochures'
+                        ? Icons.auto_stories_outlined
+                        : Icons.place_outlined),
             title: Text(e.key),
             trailing: Text(e.value == 0 ? 'aucune' : '${e.value}', style: TextStyle(color: cs.onSurfaceVariant)),
             onTap: () => setState(() => openKey = e.key),
@@ -119,6 +123,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ('all', 'Tous ($count)'),
                   ('year', 'Par année'),
                   ('az', 'A-Z'),
+                  ('brochures', 'Brochures'),
                   ('series', 'Par séries'),
                   ('location', 'Par lieu'),
                 ])

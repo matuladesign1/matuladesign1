@@ -37,6 +37,7 @@ class Sermon {
     this.translationStatus = 'original',
     this.needsReview = false,
     this.reviewNotes,
+    this.kind = 'sermon',
   });
   final int id;
   final String code, language, title;
@@ -45,6 +46,13 @@ class Sermon {
   final bool audioCues, needsReview;
   final int paragraphCount;
   final String translationStatus;
+
+  /// 'sermon' ou 'brochure' (chapitre d'un livre sans code de prédication).
+  final String kind;
+  bool get isBrochure => kind == 'brochure';
+
+  /// Référence affichée : le code officiel, ou « Brochure » pour un chapitre de livre.
+  String get displayCode => isBrochure ? 'Brochure' : code;
 
   bool get isAiTranslation => translationStatus == 'ia_non_validee';
 
@@ -92,6 +100,7 @@ class Sermon {
         translationStatus: r['translation_status'] as String? ?? 'original',
         needsReview: (r['needs_review'] as int? ?? 0) == 1,
         reviewNotes: r['review_notes'] as String?,
+        kind: (r['kind'] as String?) ?? 'sermon',
       );
 }
 
@@ -106,7 +115,7 @@ class Paragraph {
 
 enum SearchMode { words, exact, meaning }
 
-enum HitKind { sermon, bible, note }
+enum HitKind { title, sermon, bible, note }
 
 class SearchHit {
   SearchHit({

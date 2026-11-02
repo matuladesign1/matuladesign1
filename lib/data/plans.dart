@@ -46,7 +46,7 @@ class Plans extends ChangeNotifier {
   static const studySeries = [
     'La Révélation des Sept Sceaux',
     'Les Sept Âges de l\'Église',
-    'La Révélation de Jésus-Christ',
+    'Exposé des Sept Âges de l\'Église',
   ];
 
   void _build() {
@@ -78,7 +78,7 @@ class Plans extends ChangeNotifier {
           spread(chapters([20]), 31), 3),
     ];
     for (final (i, s) in studySeries.indexed) {
-      final sermons = adb.sermons(series: s);
+      final sermons = adb.sermons(series: s, kind: null);
       final seen = <String>{};
       final days = <List<Reading>>[
         for (final ser in sermons)
@@ -94,7 +94,7 @@ class Plans extends ChangeNotifier {
     for (final s in adb.seriesCounts().keys.where((s) => !studySeries.contains(s))) {
       final seen = <String>{};
       final days = <List<Reading>>[
-        for (final ser in adb.sermons(series: s))
+        for (final ser in adb.sermons(series: s, kind: null))
           if (seen.add(ser.code)) [Reading.sermon(ser.code, '${ser.code} · ${ser.title}')]
       ];
       all.add(PlanDef('serie-${s.hashCode}', 'Étudier : $s', 'Une prédication par jour.', days, 7, series: s));
@@ -159,5 +159,5 @@ class Plans extends ChangeNotifier {
 
   /// Retrouve le sermon (version française de préférence) d'une lecture.
   Sermon? sermonFor(Reading r) =>
-      r.sermonCode == null ? null : (adb.sermonVersion(r.sermonCode!, 'fr') ?? adb.sermons(filter: r.sermonCode!).firstOrNull);
+      r.sermonCode == null ? null : (adb.sermonVersion(r.sermonCode!, 'fr') ?? adb.sermons(filter: r.sermonCode!, kind: null).firstOrNull);
 }

@@ -136,7 +136,7 @@ class _NotesScreenState extends State<NotesScreen> {
                               title: Text(n.title.isEmpty ? 'Sans titre' : n.title, style: const TextStyle(fontWeight: FontWeight.w600)),
                               subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 if (n.refLabel != null)
-                                  Text(n.refLabel!, style: const TextStyle(color: Brand.lightBlue)),
+                                  Text(n.refLabel!, style: TextStyle(color: Theme.of(context).colorScheme.tertiary)),
                                 Text(n.body, maxLines: 3, overflow: TextOverflow.ellipsis),
                                 const SizedBox(height: 4),
                                 Text(n.updatedAt.substring(0, 16).replaceAll('T', ' '),
@@ -277,7 +277,7 @@ class _NoteEditorState extends State<NoteEditor> {
         ),
         body: ListView(padding: const EdgeInsets.all(16), children: [
           if (label != null)
-            Text(label, style: const TextStyle(color: Brand.lightBlue, fontWeight: FontWeight.w600)),
+            Text(label, style: TextStyle(color: Theme.of(context).colorScheme.tertiary, fontWeight: FontWeight.w600)),
           if (widget.quote != null)
             Container(
               margin: const EdgeInsets.only(top: 8, bottom: 8),

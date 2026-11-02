@@ -34,14 +34,14 @@ class _PlansScreenState extends State<PlansScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: mineTab == v ? Brand.lightBlue : cs.outlineVariant, width: mineTab == v ? 3 : 1))),
+                  border: Border(bottom: BorderSide(color: mineTab == v ? Theme.of(context).colorScheme.primary : cs.outlineVariant, width: mineTab == v ? 3 : 1))),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(icon, size: 20, color: mineTab == v ? Brand.lightBlue : cs.onSurfaceVariant),
+                Icon(icon, size: 20, color: mineTab == v ? Theme.of(context).colorScheme.primary : cs.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(label,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(letterSpacing: 1.5, color: mineTab == v ? Brand.lightBlue : cs.onSurfaceVariant)),
+                      style: TextStyle(letterSpacing: 1.5, color: mineTab == v ? Theme.of(context).colorScheme.primary : cs.onSurfaceVariant)),
                 ),
               ]),
             ),

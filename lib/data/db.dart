@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sermons(
   needs_review INTEGER NOT NULL DEFAULT 0,
   review_notes TEXT,
   added_at TEXT NOT NULL DEFAULT (datetime('now')),
+  kind TEXT NOT NULL DEFAULT 'sermon',
   UNIQUE(code, language));
 CREATE TABLE IF NOT EXISTS paragraphs(
   id INTEGER PRIMARY KEY,
@@ -42,9 +43,35 @@ CREATE TABLE IF NOT EXISTS paragraphs(
   text TEXT NOT NULL,
   start_ms INTEGER);
 CREATE INDEX IF NOT EXISTS paragraphs_sermon ON paragraphs(sermon_id, number);
+CREATE TABLE IF NOT EXISTS collections(
+  name TEXT NOT NULL, code TEXT NOT NULL, position INTEGER NOT NULL,
+  PRIMARY KEY(name, code));
 ''';
 
+/// Ajoute aux anciennes bases les colonnes apparues depuis (à appeler après sermonSchema).
+void migrateSermonSchema(Database db, [String schema = 'main']) {
+  final cols = db.select('PRAGMA $schema.table_info(sermons)').map((r) => r['name'] as String).toSet();
+  if (!cols.contains('kind')) {
+    db.execute("ALTER TABLE $schema.sermons ADD COLUMN kind TEXT NOT NULL DEFAULT 'sermon'");
+  }
+}
+
 const appSchema = '''
+CREATE VIRTUAL TABLE IF NOT EXISTS sermons_fts USING fts5(
+  title, code, location, content='sermons', content_rowid='id',
+  tokenize='unicode61 remove_diacritics 2');
+CREATE TRIGGER IF NOT EXISTS sermons_ai AFTER INSERT ON sermons BEGIN
+  INSERT INTO sermons_fts(rowid, title, code, location) VALUES (new.id, new.title, new.code, new.location);
+END;
+CREATE TRIGGER IF NOT EXISTS sermons_ad AFTER DELETE ON sermons BEGIN
+  INSERT INTO sermons_fts(sermons_fts, rowid, title, code, location)
+    VALUES('delete', old.id, old.title, old.code, old.location);
+END;
+CREATE TRIGGER IF NOT EXISTS sermons_au AFTER UPDATE ON sermons BEGIN
+  INSERT INTO sermons_fts(sermons_fts, rowid, title, code, location)
+    VALUES('delete', old.id, old.title, old.code, old.location);
+  INSERT INTO sermons_fts(rowid, title, code, location) VALUES (new.id, new.title, new.code, new.location);
+END;
 CREATE VIRTUAL TABLE IF NOT EXISTS paragraphs_fts USING fts5(
   text, content='paragraphs', content_rowid='id',
   tokenize='unicode61 remove_diacritics 2');
@@ -128,7 +155,10 @@ class AppDb {
     db.execute('PRAGMA journal_mode=WAL');
     db.execute('PRAGMA foreign_keys=ON');
     db.execute(sermonSchema);
+    migrateSermonSchema(db);
     db.execute(appSchema);
+    // Index des titres : reconstruit à chaque démarrage (quelques millisecondes).
+    db.execute("INSERT INTO sermons_fts(sermons_fts) VALUES('rebuild')");
     db.execute("ATTACH DATABASE ? AS bible", [biblePath]);
     I = AppDb._(db, dir);
     return I;
@@ -165,9 +195,11 @@ class AppDb {
     final fresh = sqlite3.open(tmpPath);
     try {
       fresh.execute(sermonSchema);
+      migrateSermonSchema(fresh);
       fresh.execute(appSchema);
       if (File(mainPath).existsSync()) {
         fresh.execute('ATTACH DATABASE ? AS old', [mainPath]);
+        migrateSermonSchema(fresh, 'old');
         fresh.execute('BEGIN');
         for (final t in const ['notes', 'favorites', 'highlights', 'history', 'search_history', 'activity',
           'plan_state', 'plan_progress', 'translations_cache']) {
@@ -247,24 +279,30 @@ class AppDb {
   // ---------------------------------------------------------------- Sermons
   static const _sermonCols =
       'id, code, language, title, date, year, location, duration_sec, series, audio_url, '
-      'audio_cues, pdf_name, source, paragraph_count, translation_status, needs_review, review_notes';
+      'audio_cues, pdf_name, source, paragraph_count, translation_status, needs_review, review_notes, kind';
 
   int sermonCount() =>
-      db.select("SELECT count(DISTINCT code) c FROM sermons WHERE translation_status != 'ia_non_validee'")
+      db.select("SELECT count(DISTINCT code) c FROM sermons WHERE translation_status != 'ia_non_validee' AND kind='sermon'")
           .first['c'] as int;
 
   /// Liste de la bibliothèque. [order] : date | title | duration | series | location.
-  List<Sermon> sermons({String order = 'date', String filter = '', String? series, int? year, String? location}) {
+  /// [kind] : 'sermon' (par défaut), 'brochure', ou null pour tous les documents.
+  List<Sermon> sermons(
+      {String order = 'date', String filter = '', String? series, int? year, String? location, String? kind = 'sermon'}) {
     final where = <String>["translation_status != 'ia_non_validee'"];
     final args = <Object?>[];
+    if (kind != null) {
+      where.add('kind = ?');
+      args.add(kind);
+    }
     if (filter.trim().isNotEmpty) {
       where.add('(title LIKE ? OR code LIKE ? OR location LIKE ? OR date LIKE ?)');
       final f = '%${filter.trim()}%';
       args.addAll([f, f, f, f]);
     }
     if (series != null) {
-      where.add('series = ?');
-      args.add(series);
+      where.add('(series = ? OR code IN (SELECT code FROM collections WHERE name = ?))');
+      args.addAll([series, series]);
     }
     if (year != null) {
       where.add('year = ?');
@@ -308,15 +346,31 @@ class AppDb {
           r['series'] as String: r['c'] as int
       };
 
+  /// Brochures (recueils thématiques) : nom -> nombre de documents.
+  Map<String, int> collectionCounts() => {
+        for (final r in db.select(
+            'SELECT name, count(*) c, min(rowid) o FROM collections GROUP BY name ORDER BY o'))
+          r['name'] as String: r['c'] as int
+      };
+
+  /// Documents d'une brochure, dans l'ordre du recueil.
+  List<Sermon> collectionSermons(String name) => db
+      .select(
+          'SELECT ${_sermonCols.split(', ').map((c) => 's.${c.trim()}').join(', ')} FROM collections c '
+          "JOIN sermons s ON s.code = c.code AND s.language = 'fr' WHERE c.name = ? ORDER BY c.position",
+          [name])
+      .map(Sermon.fromRow)
+      .toList();
+
   Map<int, int> yearCounts() => {
         for (final r in db.select(
-            'SELECT year, count(DISTINCT code) c FROM sermons WHERE year IS NOT NULL GROUP BY year ORDER BY year'))
+            'SELECT year, count(DISTINCT code) c FROM sermons WHERE year IS NOT NULL AND kind='sermon' GROUP BY year ORDER BY year'))
           r['year'] as int: r['c'] as int
       };
 
   Map<String, int> locationCounts() => {
         for (final r in db.select(
-            'SELECT location, count(DISTINCT code) c FROM sermons WHERE location IS NOT NULL GROUP BY location ORDER BY c DESC, location'))
+            'SELECT location, count(DISTINCT code) c FROM sermons WHERE location IS NOT NULL AND kind='sermon' GROUP BY location ORDER BY c DESC, location'))
           r['location'] as String: r['c'] as int
       };
 

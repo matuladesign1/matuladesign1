@@ -11,7 +11,7 @@ import os
 import re
 import sys
 
-APP_LABEL = "Sermons Branham"
+APP_LABEL = "Sermons de Branham Matomate"
 ROOT = os.path.join("android", "app")
 
 
