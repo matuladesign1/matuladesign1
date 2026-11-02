@@ -364,13 +364,13 @@ class AppDb {
 
   Map<int, int> yearCounts() => {
         for (final r in db.select(
-            'SELECT year, count(DISTINCT code) c FROM sermons WHERE year IS NOT NULL AND kind='sermon' GROUP BY year ORDER BY year'))
+            "SELECT year, count(DISTINCT code) c FROM sermons WHERE year IS NOT NULL AND kind='sermon' GROUP BY year ORDER BY year"))
           r['year'] as int: r['c'] as int
       };
 
   Map<String, int> locationCounts() => {
         for (final r in db.select(
-            'SELECT location, count(DISTINCT code) c FROM sermons WHERE location IS NOT NULL AND kind='sermon' GROUP BY location ORDER BY c DESC, location'))
+            "SELECT location, count(DISTINCT code) c FROM sermons WHERE location IS NOT NULL AND kind='sermon' GROUP BY location ORDER BY c DESC, location"))
           r['location'] as String: r['c'] as int
       };
 
