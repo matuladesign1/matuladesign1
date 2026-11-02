@@ -5,38 +5,53 @@ on:
 jobs:
   inspect:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
       - name: Outils
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils >/dev/null
           pip install -q gdown pypdf
-      - name: Télécharger depuis Google Drive
+      - name: Télécharger
         run: gdown --retries 3 "1waNFF0n2AA6OgYrOAo2AVdu8wff7Rekg" -O sermons.pdf
-      - name: Construire la bibliothèque
-        run: python3 tools/import_grenier.py sermons.pdf out --keep-db full.db
-      - name: Contrôles
+      - name: Livres et Sept âges
         run: |
-          ls -la out | head; du -sh out
           python3 - <<'P'
-          import sqlite3
-          d=sqlite3.connect("full.db")
-          print("sermons", d.execute("select count(*), count(distinct code) from sermons").fetchone())
-          print("années", d.execute("select year,count(*) from sermons group by year").fetchall())
-          print("sans lieu", d.execute("select count(*) from sermons where location is null").fetchone())
-          print("à vérifier", d.execute("select count(*) from sermons where needs_review=1").fetchone())
-          print("§ par sermon: min/avg/max", d.execute("select min(paragraph_count),avg(paragraph_count),max(paragraph_count) from sermons").fetchone())
-          print("1 seul §", d.execute("select count(*) from sermons where paragraph_count<=2").fetchone())
-          print("séries", d.execute("select series,count(*) from sermons where series is not null group by series").fetchall())
-          for code in ("47-0412","63-0318","65-1127B"):
-              r=d.execute("select id,code,title,date,location,paragraph_count,review_notes from sermons where code like ?",(code+"%",)).fetchone()
-              print("\n===",r)
-              if r:
-                  for n,t in d.execute("select number,text from paragraphs where sermon_id=? and number in (1,2,3,10) order by number",(r[0],)):
-                      print(n,":",t[:300])
-                  print("dernier:", d.execute("select number,text from paragraphs where sermon_id=? order by number desc limit 1",(r[0],)).fetchone()[1][-300:])
-          print("\nrecherche exacte 'le temps de la fin':", d.execute("select count(*) from paragraphs_fts where paragraphs_fts match '\"le temps de la fin\"'").fetchone())
-          print("lieux fréquents", d.execute("select location,count(*) c from sermons group by location order by c desc limit 12").fetchall())
-          print("exemples à vérifier", d.execute("select code,title,review_notes from sermons where needs_review=1 limit 15").fetchall())
+          from pypdf import PdfReader
+          r=PdfReader("sermons.pdf")
+          items=[]
+          def walk(o,path):
+              last=None
+              for x in o:
+                  if isinstance(x,list): walk(x,path+[last])
+                  else:
+                      try: items.append((tuple(path),x.title.strip(),r.get_destination_page_number(x)))
+                      except Exception: pass
+                      last=x.title.strip()
+          walk(r.outline,[])
+          starts=sorted({p for _,_,p in items})
+          for path,t,p in items:
+              if path and ("Livres" in path[0] or "Expos" in path[0]):
+                  end=next((s for s in starts if s>p),len(r.pages))
+                  print(repr(path),"|",t,"| p",p,"->",end, "(",end-p,"pages)")
+          P
+      - name: Débuts de quelques livres
+        run: |
+          python3 - <<'P'
+          import subprocess
+          from pypdf import PdfReader
+          r=PdfReader("sermons.pdf")
+          items=[]
+          def walk(o,path):
+              last=None
+              for x in o:
+                  if isinstance(x,list): walk(x,path+[last])
+                  else:
+                      try: items.append((tuple(path),x.title.strip(),r.get_destination_page_number(x)))
+                      except Exception: pass
+                      last=x.title.strip()
+          walk(r.outline,[])
+          livres=[i for i in items if i[0] and ("Livres" in i[0][0] or "Expos" in i[0][0])]
+          for path,t,p in livres[:4]+livres[-3:]+[livres[len(livres)//2]]:
+              txt=subprocess.run(["pdftotext","-f",str(p+1),"-l",str(p+2),"-enc","UTF-8","sermons.pdf","-"],capture_output=True,text=True).stdout
+              print("\n######",t,p); print(txt[:1500])
           P
